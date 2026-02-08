@@ -481,17 +481,27 @@
         .gallery-item.heart-frame .gallery-item-inner {
             width: 250px;
             height: 250px;
-            clip-path: polygon(
-                50% 10%,
-                61% 2%, 75% 0%, 89% 5%, 97% 15%,
-                100% 30%, 98% 45%, 93% 58%, 85% 70%,
-                75% 80%, 62% 88%, 50% 95%,
-                38% 88%, 25% 80%, 15% 70%, 7% 58%,
-                2% 45%, 0% 30%,
-                3% 15%, 11% 5%, 25% 0%, 39% 2%
-            );
+            border-radius: 0;
+            /* Using a simpler, more compatible heart shape */
+            clip-path: path('M 50,15 C 55,5 75,0 85,10 C 95,20 95,35 85,45 L 50,80 L 15,45 C 5,35 5,20 15,10 C 25,0 45,5 50,15 Z');
             margin: 0 auto;
             background: #fff;
+        }
+        
+        /* Fallback for browsers that don't support path() */
+        @supports not (clip-path: path('M 0 0')) {
+            .gallery-item.heart-frame .gallery-item-inner {
+                clip-path: polygon(
+                    50% 5%,
+                    61% 2%, 72% 5%, 82% 12%, 89% 22%,
+                    93% 35%, 92% 48%, 88% 60%, 82% 70%,
+                    73% 78%, 62% 85%, 50% 90%,
+                    38% 85%, 27% 78%, 18% 70%, 12% 60%,
+                    8% 48%, 7% 35%,
+                    11% 22%, 18% 12%, 28% 5%, 39% 2%
+                );
+                border-radius: 0;
+            }
         }
 
         /* Polaroid tape effect */
@@ -577,15 +587,22 @@
             
             .gallery-item.heart-frame .gallery-item-inner {
                 width: 100%;
-                max-width: 280px;
-                height: 280px;
+                max-width: 250px;
+                height: 250px;
+            }
+            
+            /* Better spacing for mobile gallery */
+            .gallery-caption {
+                min-height: 55px;
+                padding: 8px 10px;
             }
             
             /* Drawing canvas mobile */
             #draw-canvas {
                 width: 100% !important;
-                height: 300px !important;
+                height: 350px !important;
                 max-width: 100%;
+                touch-action: none;
             }
             
             /* Section 8 mobile */
@@ -898,8 +915,17 @@
             <div class="glass-card">
                 <h2>🎨 Draw Your Heart Out</h2>
                 <p>Use your finger or mouse to draw love messages!</p>
-                <canvas id="draw-canvas" width="600" height="400" style="border: 1px solid rgba(255,255,255,0.3); border-radius: 15px; background: rgba(0,0,0,0.3); cursor: crosshair; max-width: 100%;"></canvas>
-                <br><br>
+                <canvas id="draw-canvas" width="600" height="400" style="
+                    border: 1px solid rgba(255,255,255,0.3); 
+                    border-radius: 15px; 
+                    background: rgba(0,0,0,0.3); 
+                    cursor: crosshair; 
+                    max-width: 100%;
+                    display: block;
+                    margin: 20px auto;
+                    touch-action: none;
+                "></canvas>
+                <br>
                 <button class="btn-glass" onclick="clearCanvas()">Clear Canvas</button>
                 <button class="btn-glass" onclick="scrollToNext(7)">Continue 💫</button>
             </div>
@@ -1219,8 +1245,14 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Animate hearts
-            hearts.forEach(heart => {
+            // Reduce animation complexity on mobile for better performance
+            const isMobile = window.innerWidth <= 768;
+            const animationStep = isMobile ? 2 : 1;
+
+            // Animate hearts (skip frames on mobile)
+            hearts.forEach((heart, index) => {
+                if (isMobile && index % animationStep !== 0) return;
+                
                 heart.position.add(heart.userData.velocity);
                 heart.rotation.x += heart.userData.rotationSpeed.x;
                 heart.rotation.y += heart.userData.rotationSpeed.y;
@@ -1237,8 +1269,13 @@
                 heart.scale.set(baseScale * pulse, baseScale * pulse, baseScale * pulse);
             });
 
-            // Animate particles
-            particles = particles.filter(particle => {
+            // Animate particles (limit on mobile)
+            particles = particles.filter((particle, index) => {
+                if (isMobile && particles.length > 50 && index % 2 !== 0) {
+                    scene.remove(particle.system);
+                    return false;
+                }
+                
                 const positions = particle.system.geometry.attributes.position.array;
                 for (let i = 0; i < positions.length; i += 3) {
                     positions[i] += particle.velocities[i];
@@ -1462,40 +1499,55 @@
         // Drawing Canvas
         function setupDrawingCanvas() {
             const canvas = document.getElementById('draw-canvas');
+            if (!canvas) return;
+            
             const ctx = canvas.getContext('2d');
             let drawing = false;
             let hue = 0;
 
+            // Prevent scrolling when touching canvas
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+
+            // Mouse events for desktop
             canvas.addEventListener('mousedown', startDraw);
             canvas.addEventListener('mousemove', draw);
             canvas.addEventListener('mouseup', stopDraw);
             canvas.addEventListener('mouseout', stopDraw);
 
+            // Touch events for mobile
             canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
                 const mouseEvent = new MouseEvent('mousedown', {
                     clientX: touch.clientX,
                     clientY: touch.clientY
                 });
-                canvas.dispatchEvent(mouseEvent);
-            });
+                startDraw(mouseEvent);
+            }, { passive: false });
 
             canvas.addEventListener('touchmove', (e) => {
                 e.preventDefault();
+                if (!drawing) return;
                 const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
                 const mouseEvent = new MouseEvent('mousemove', {
                     clientX: touch.clientX,
                     clientY: touch.clientY
                 });
-                canvas.dispatchEvent(mouseEvent);
-            });
+                draw(mouseEvent);
+            }, { passive: false });
 
             canvas.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                const mouseEvent = new MouseEvent('mouseup', {});
-                canvas.dispatchEvent(mouseEvent);
-            });
+                stopDraw();
+            }, { passive: false });
 
             function startDraw(e) {
                 drawing = true;
@@ -1511,16 +1563,17 @@
                 ctx.strokeStyle = `hsl(${330 + hue % 60}, 100%, 50%)`;
                 ctx.lineWidth = 5;
                 ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
                 ctx.shadowBlur = 15;
                 ctx.shadowColor = ctx.strokeStyle;
                 ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
                 ctx.stroke();
                 
-                // Add particle effect
-                if (Math.random() > 0.8) {
+                // Add particle effect (less frequent on mobile for performance)
+                if (Math.random() > 0.9) {
                     const x = (e.clientX - window.innerWidth / 2) / 10;
                     const y = -(e.clientY - window.innerHeight / 2) / 10;
-                    createParticleExplosion(x, y, 0, 5);
+                    createParticleExplosion(x, y, 0, 3);
                 }
             }
 
